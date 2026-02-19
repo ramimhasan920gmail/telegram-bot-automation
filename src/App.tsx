@@ -15,18 +15,34 @@ interface Status {
   syncedCount: number;
   configured: boolean;
   recentPosts: Array<{ post_id: string; synced_at: string }>;
+  settings: {
+    BLOGGER_API_KEY: string;
+    BLOGGER_BLOG_ID: string;
+    TELEGRAM_BOT_TOKEN: string;
+    TELEGRAM_CHANNEL_ID: string;
+  };
 }
 
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
+  const [formData, setFormData] = useState({
+    BLOGGER_API_KEY: "",
+    BLOGGER_BLOG_ID: "",
+    TELEGRAM_BOT_TOKEN: "",
+    TELEGRAM_CHANNEL_ID: "",
+  });
 
   const fetchStatus = async () => {
     try {
       const res = await fetch("/api/status");
       const data = await res.json();
       setStatus(data);
+      if (data.settings) {
+        setFormData(data.settings);
+      }
     } catch (err) {
       console.error("Failed to fetch status", err);
     }
@@ -35,6 +51,28 @@ export default function App() {
   useEffect(() => {
     fetchStatus();
   }, []);
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      if (res.ok) {
+        setMessage({ text: "Settings saved successfully!", type: "success" });
+        fetchStatus();
+      } else {
+        setMessage({ text: "Failed to save settings", type: "error" });
+      }
+    } catch (err) {
+      setMessage({ text: "Network error saving settings", type: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleSync = async () => {
     setSyncing(true);
@@ -186,32 +224,72 @@ export default function App() {
             </section>
           </div>
 
-          {/* Right Column: Configuration Info */}
+          {/* Right Column: Configuration Form */}
           <div className="space-y-8">
             <section className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
               <h3 className="font-bold mb-4 flex items-center gap-2">
                 <Settings className="w-5 h-5 text-indigo-600" />
                 Configuration
               </h3>
-              <div className="space-y-4">
+              
+              <form onSubmit={handleSaveSettings} className="space-y-4">
                 <div className="space-y-1">
-                  <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Environment Setup</p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Status</span>
-                    <span className={`text-xs ${status?.configured ? "text-emerald-600" : "text-rose-600"}`}>
-                      {status?.configured ? "All Set" : "Incomplete"}
-                    </span>
-                  </div>
+                  <label className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Blogger API Key</label>
+                  <input
+                    type="password"
+                    value={formData.BLOGGER_API_KEY}
+                    onChange={(e) => setFormData({ ...formData, BLOGGER_API_KEY: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    placeholder="Enter API Key"
+                  />
                 </div>
-              </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Blogger Blog ID</label>
+                  <input
+                    type="text"
+                    value={formData.BLOGGER_BLOG_ID}
+                    onChange={(e) => setFormData({ ...formData, BLOGGER_BLOG_ID: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    placeholder="Enter Blog ID"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Telegram Bot Token</label>
+                  <input
+                    type="password"
+                    value={formData.TELEGRAM_BOT_TOKEN}
+                    onChange={(e) => setFormData({ ...formData, TELEGRAM_BOT_TOKEN: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    placeholder="Enter Bot Token"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Telegram Channel ID</label>
+                  <input
+                    type="text"
+                    value={formData.TELEGRAM_CHANNEL_ID}
+                    onChange={(e) => setFormData({ ...formData, TELEGRAM_CHANNEL_ID: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    placeholder="@channel or -100..."
+                  />
+                </div>
+                
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors disabled:bg-gray-400"
+                >
+                  {saving ? "Saving..." : "Save Settings"}
+                </button>
+              </form>
               
               <div className="mt-8 pt-6 border-t border-gray-100">
                 <h4 className="text-xs font-bold text-gray-900 mb-2">How it works</h4>
                 <ol className="text-xs text-gray-500 space-y-2 list-decimal ml-4">
+                  <li>Auto-syncs every 30 seconds.</li>
                   <li>Fetches latest 10 posts from Blogger.</li>
-                  <li>Checks if post was already synced.</li>
                   <li>Uses Gemini AI to extract movie metadata.</li>
-                  <li>Formats and sends to Telegram Channel.</li>
+                  <li>Sends with image to Telegram Channel.</li>
                 </ol>
               </div>
             </section>

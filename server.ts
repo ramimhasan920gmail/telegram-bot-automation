@@ -15,8 +15,21 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS synced_posts (
     post_id TEXT PRIMARY KEY,
     synced_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
+  );
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
 `);
+
+const getSetting = (key: string) => {
+  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
+  return row?.value || process.env[key];
+};
+
+const setSetting = (key: string, value: string) => {
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+};
 
 const app = express();
 app.use(express.json());
@@ -60,8 +73,8 @@ async function extractMovieDetails(content: string) {
 }
 
 async function sendToTelegram(message: string, url: string, imageUrl?: string) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHANNEL_ID;
+  const botToken = getSetting("TELEGRAM_BOT_TOKEN");
+  const chatId = getSetting("TELEGRAM_CHANNEL_ID");
 
   if (!botToken || !chatId) {
     throw new Error("Telegram credentials missing");
@@ -108,29 +121,42 @@ app.get("/api/status", (req, res) => {
   const countRow = db.prepare("SELECT COUNT(*) as count FROM synced_posts").get() as { count: number };
   const recentPosts = db.prepare("SELECT post_id, synced_at FROM synced_posts ORDER BY synced_at DESC LIMIT 5").all();
   
+  const settings = {
+    BLOGGER_API_KEY: getSetting("BLOGGER_API_KEY") || "",
+    BLOGGER_BLOG_ID: getSetting("BLOGGER_BLOG_ID") || "",
+    TELEGRAM_BOT_TOKEN: getSetting("TELEGRAM_BOT_TOKEN") || "",
+    TELEGRAM_CHANNEL_ID: getSetting("TELEGRAM_CHANNEL_ID") || "",
+  };
+
   res.json({ 
     syncedCount: countRow.count,
     recentPosts,
-    configured: !!(process.env.BLOGGER_API_KEY && process.env.BLOGGER_BLOG_ID && process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHANNEL_ID)
+    settings,
+    configured: !!(settings.BLOGGER_API_KEY && settings.BLOGGER_BLOG_ID && settings.TELEGRAM_BOT_TOKEN && settings.TELEGRAM_CHANNEL_ID)
   });
 });
 
-app.post("/api/sync", async (req, res) => {
-  const apiKey = process.env.BLOGGER_API_KEY;
-  const blogId = process.env.BLOGGER_BLOG_ID;
+app.post("/api/settings", (req, res) => {
+  const { BLOGGER_API_KEY, BLOGGER_BLOG_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHANNEL_ID } = req.body;
+  if (BLOGGER_API_KEY) setSetting("BLOGGER_API_KEY", BLOGGER_API_KEY);
+  if (BLOGGER_BLOG_ID) setSetting("BLOGGER_BLOG_ID", BLOGGER_BLOG_ID);
+  if (TELEGRAM_BOT_TOKEN) setSetting("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN);
+  if (TELEGRAM_CHANNEL_ID) setSetting("TELEGRAM_CHANNEL_ID", TELEGRAM_CHANNEL_ID);
+  res.json({ message: "Settings saved" });
+});
 
-  if (!apiKey || !blogId) {
-    return res.status(400).json({ error: "Blogger credentials missing" });
-  }
+async function performSync() {
+  const apiKey = getSetting("BLOGGER_API_KEY");
+  const blogId = getSetting("BLOGGER_BLOG_ID");
+
+  if (!apiKey || !blogId) return 0;
 
   try {
     const bloggerUrl = `https://www.googleapis.com/blogger/v3/blogs/${blogId}/posts?key=${apiKey}&maxResults=10`;
     const response = await fetch(bloggerUrl);
     const data = await response.json();
 
-    if (!data.items) {
-      return res.json({ message: "No posts found", synced: 0 });
-    }
+    if (!data.items) return 0;
 
     let syncedCount = 0;
     for (const post of data.items) {
@@ -139,7 +165,6 @@ app.post("/api/sync", async (req, res) => {
       if (!exists) {
         console.log(`Syncing post: ${post.title}`);
         
-        // Try to get image from images array or extract from content
         let imageUrl = post.images?.[0]?.url;
         if (!imageUrl) {
           const imgMatch = post.content.match(/<img[^>]+src="([^">]+)"/);
@@ -153,13 +178,29 @@ app.post("/api/sync", async (req, res) => {
         syncedCount++;
       }
     }
+    return syncedCount;
+  } catch (error) {
+    console.error("Auto-sync Error:", error);
+    return 0;
+  }
+}
 
+app.post("/api/sync", async (req, res) => {
+  try {
+    const syncedCount = await performSync();
     res.json({ message: "Sync complete", synced: syncedCount });
   } catch (error: any) {
-    console.error("Sync Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
+
+// Auto-sync every 30 seconds
+if (!process.env.NETLIFY) {
+  setInterval(async () => {
+    console.log("Running auto-sync...");
+    await performSync();
+  }, 30000);
+}
 
 // Vite middleware setup
 async function setupVite(app: express.Express) {
