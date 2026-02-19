@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
-import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -45,42 +44,12 @@ export { app };
 
 const PORT = 3000;
 
-async function extractMovieDetails(content: string) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error("GEMINI_API_KEY is missing in environment variables.");
-    return "Error: GEMINI_API_KEY is not configured on the server.";
-  }
-
-  const genAI = new GoogleGenAI({ apiKey });
-  const model = "gemini-3-flash-preview";
-  const prompt = `
-    Extract movie details from the following Blogger post content. 
-    Return the data in the following format:
-    🎬 Title
-    ⭐ IMDb: Rating (or N/A)
-    📅 Release Date: YYYY-MM-DD (or N/A)
-    🎭 Genre: Genres
-    🌍 Language: Language
-    🎬 Director: Director Name
-    💰 Budget: Budget (or N/A)
-    🎭 Cast: Cast Names
-    📝 Plot: A short summary of the plot.
-
-    Content:
-    ${content}
-  `;
-
-  try {
-    const response = await genAI.models.generateContent({
-      model: model,
-      contents: [{ parts: [{ text: prompt }] }],
-    });
-    return response.text || "Failed to extract details.";
-  } catch (error) {
-    console.error("Gemini Error:", error);
-    return "Error extracting details.";
-  }
+async function extractMovieDetails(post: any) {
+  // Simple extraction without Gemini AI
+  const title = post.title || "New Movie Post";
+  const snippet = post.content.replace(/<[^>]*>/g, "").substring(0, 200) + "...";
+  
+  return `<b>${title}</b>\n\n${snippet}`;
 }
 
 async function sendToTelegram(message: string, url: string, imageUrl?: string) {
@@ -143,7 +112,6 @@ app.get("/api/status", (req, res) => {
     syncedCount: countRow.count,
     recentPosts,
     settings,
-    geminiConfigured: !!process.env.GEMINI_API_KEY,
     configured: !!(settings.BLOGGER_API_KEY && settings.BLOGGER_BLOG_ID && settings.TELEGRAM_BOT_TOKEN && settings.TELEGRAM_CHANNEL_ID)
   });
 });
@@ -195,14 +163,9 @@ app.post("/api/sync", async (req, res) => {
             if (imgMatch) imageUrl = imgMatch[1];
           }
 
-          console.log("Extracting details with Gemini...");
-          const details = await extractMovieDetails(post.content);
+          console.log("Formatting post details...");
+          const details = await extractMovieDetails(post);
           
-          if (details.includes("Error extracting details")) {
-            console.error("Gemini extraction failed for post:", post.id);
-            continue;
-          }
-
           const fullMessage = `${details}\n\n🔗 Download Now: ${post.url}`;
           let telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
           let body: any = { chat_id: chatId, text: fullMessage, parse_mode: "HTML" };

@@ -14,7 +14,6 @@ import { motion, AnimatePresence } from "motion/react";
 interface Status {
   syncedCount: number;
   configured: boolean;
-  geminiConfigured?: boolean;
   recentPosts: Array<{ post_id: string; synced_at: string }>;
   settings: {
     BLOGGER_API_KEY: string;
@@ -146,19 +145,6 @@ export default function App() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-12">
-        {status && status.geminiConfigured === false && (
-          <div className="mb-8 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 text-rose-800">
-            <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
-            <div>
-              <p className="font-bold text-sm">Server Configuration Missing</p>
-              <p className="text-xs opacity-90">
-                The <code>GEMINI_API_KEY</code> is not set in your server environment variables. 
-                Please add it to your Netlify site settings (Environment variables) for the sync to work.
-              </p>
-            </div>
-          </div>
-        )}
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           
           {/* Left Column: Stats & Action */}
