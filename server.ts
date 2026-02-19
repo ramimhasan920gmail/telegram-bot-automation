@@ -22,6 +22,8 @@ db.exec(`
 const app = express();
 app.use(express.json());
 
+export { app };
+
 const PORT = 3000;
 
 // Gemini Setup
@@ -167,7 +169,7 @@ async function startServer() {
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (!process.env.NETLIFY) {
     app.use(express.static(path.join(__dirname, "dist")));
     app.get("*", (req, res) => {
       res.sendFile(path.join(__dirname, "dist", "index.html"));
@@ -179,4 +181,6 @@ async function startServer() {
   });
 }
 
-startServer();
+if (process.env.NODE_ENV !== "production" && !process.env.NETLIFY) {
+  startServer();
+}

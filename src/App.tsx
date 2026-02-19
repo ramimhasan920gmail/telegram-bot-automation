@@ -221,6 +221,9 @@ export default function App() {
               <p className="text-xs text-indigo-100 mb-4 leading-relaxed">
                 Make sure your Telegram Bot is an administrator in your channel to post messages.
               </p>
+              <p className="text-[10px] text-indigo-200 mb-4 leading-relaxed italic">
+                Note: On Netlify, the local database is ephemeral. For permanent sync history, consider connecting a remote database.
+              </p>
               <a 
                 href="https://t.me/BotFather" 
                 target="_blank" 
