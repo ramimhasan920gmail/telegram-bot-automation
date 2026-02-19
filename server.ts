@@ -11,16 +11,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const db = new Database("sync.db");
-db.exec(`
-  CREATE TABLE IF NOT EXISTS synced_posts (
-    post_id TEXT PRIMARY KEY,
-    synced_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
-  );
-`);
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS synced_posts (
+      post_id TEXT PRIMARY KEY,
+      synced_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+  `);
+} catch (err) {
+  console.error("Database Initialization Error:", err);
+}
 
 const getSetting = (key: string) => {
   const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
@@ -137,12 +141,22 @@ app.get("/api/status", (req, res) => {
 });
 
 app.post("/api/settings", (req, res) => {
-  const { BLOGGER_API_KEY, BLOGGER_BLOG_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHANNEL_ID } = req.body;
-  if (BLOGGER_API_KEY) setSetting("BLOGGER_API_KEY", BLOGGER_API_KEY);
-  if (BLOGGER_BLOG_ID) setSetting("BLOGGER_BLOG_ID", BLOGGER_BLOG_ID);
-  if (TELEGRAM_BOT_TOKEN) setSetting("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN);
-  if (TELEGRAM_CHANNEL_ID) setSetting("TELEGRAM_CHANNEL_ID", TELEGRAM_CHANNEL_ID);
-  res.json({ message: "Settings saved" });
+  try {
+    console.log("Saving settings:", req.body);
+    const { BLOGGER_API_KEY, BLOGGER_BLOG_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHANNEL_ID } = req.body;
+    
+    // Save settings even if they are empty strings (to allow clearing)
+    // But we only save if the key is present in the request body
+    if (req.body.hasOwnProperty("BLOGGER_API_KEY")) setSetting("BLOGGER_API_KEY", BLOGGER_API_KEY || "");
+    if (req.body.hasOwnProperty("BLOGGER_BLOG_ID")) setSetting("BLOGGER_BLOG_ID", BLOGGER_BLOG_ID || "");
+    if (req.body.hasOwnProperty("TELEGRAM_BOT_TOKEN")) setSetting("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN || "");
+    if (req.body.hasOwnProperty("TELEGRAM_CHANNEL_ID")) setSetting("TELEGRAM_CHANNEL_ID", TELEGRAM_CHANNEL_ID || "");
+    
+    res.json({ message: "Settings saved" });
+  } catch (error: any) {
+    console.error("Settings Save Error:", error);
+    res.status(500).json({ error: error.message || "Failed to save settings" });
+  }
 });
 
 async function performSync() {

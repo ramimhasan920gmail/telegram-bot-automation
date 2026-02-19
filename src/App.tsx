@@ -61,11 +61,12 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
+      const data = await res.json();
       if (res.ok) {
         setMessage({ text: "Settings saved successfully!", type: "success" });
         fetchStatus();
       } else {
-        setMessage({ text: "Failed to save settings", type: "error" });
+        setMessage({ text: data.error || "Failed to save settings", type: "error" });
       }
     } catch (err) {
       setMessage({ text: "Network error saving settings", type: "error" });
