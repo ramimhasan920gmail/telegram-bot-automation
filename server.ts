@@ -68,22 +68,24 @@ async function extractMovieDetails(post: any) {
   const title = post.title || "New Movie Post";
   const content = post.content || "";
   
-  // Helper to extract text after a label
-  const extract = (label: string) => {
-    const regex = new RegExp(`${label}:?\\s*</b>?\\s*([^<\\n]+)`, "i");
+  // Helper to extract text by class name
+  const extractByClass = (className: string) => {
+    const regex = new RegExp(`class=["']${className}["'][^>]*>([^<]+)<`, "i");
     const match = content.match(regex);
     return match ? match[1].trim() : null;
   };
 
-  // Try to find common metadata
-  const imdb = extract("IMDb") || extract("Rating") || "N/A";
-  const genre = extract("Genre") || "N/A";
-  const language = extract("Language") || "N/A";
-  const quality = extract("Quality") || extract("Resolution") || "HD";
+  // Try to find metadata using the user's template classes
+  const imdb = extractByClass("imdb-rating") || "N/A";
+  const genre = extractByClass("movie-genre") || "N/A";
+  const language = extractByClass("movie-language") || "N/A";
+  const released = extractByClass("movie-release") || "N/A";
+  const director = extractByClass("movie-director") || "N/A";
+  const cast = extractByClass("movie-cast") || "N/A";
+  const plot = extractByClass("movie-plot") || "";
   
-  // Clean up snippet (remove HTML and extra whitespace)
-  const cleanContent = content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-  const snippet = cleanContent.substring(0, 250) + "...";
+  // Fallback for plot if class not found
+  const snippet = plot || content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().substring(0, 250) + "...";
 
   // Premium Template
   return `
@@ -92,7 +94,9 @@ async function extractMovieDetails(post: any) {
 ⭐ <b>IMDb:</b> ${imdb}
 🎭 <b>Genre:</b> ${genre}
 🌍 <b>Language:</b> ${language}
-💿 <b>Quality:</b> ${quality}
+📅 <b>Released:</b> ${released}
+🎬 <b>Director:</b> ${director}
+👥 <b>Cast:</b> ${cast}
 
 📝 <b>Plot:</b>
 <i>${snippet}</i>
