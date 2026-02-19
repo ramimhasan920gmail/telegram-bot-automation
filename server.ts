@@ -6,8 +6,15 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const getDirname = () => {
+  try {
+    return path.dirname(fileURLToPath(import.meta.url));
+  } catch (e) {
+    return process.cwd();
+  }
+};
+
+const __dirname = getDirname();
 
 // Use /tmp for SQLite on Netlify as the root is read-only
 const dbPath = process.env.NETLIFY ? "/tmp/sync.db" : path.join(__dirname, "sync.db");
