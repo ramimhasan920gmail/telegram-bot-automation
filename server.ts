@@ -47,7 +47,8 @@ const PORT = 3000;
 async function extractMovieDetails(post: any) {
   // Simple extraction without Gemini AI
   const title = post.title || "New Movie Post";
-  const snippet = post.content.replace(/<[^>]*>/g, "").substring(0, 200) + "...";
+  const content = post.content || "";
+  const snippet = content.replace(/<[^>]*>/g, "").substring(0, 200) + "...";
   
   return `<b>${title}</b>\n\n${snippet}`;
 }
@@ -98,13 +99,24 @@ async function sendToTelegram(message: string, url: string, imageUrl?: string) {
 }
 
 app.get("/api/status", (req, res) => {
-  const countRow = db.prepare("SELECT COUNT(*) as count FROM synced_posts").get() as { count: number };
-  const recentPosts = db.prepare("SELECT post_id, synced_at FROM synced_posts ORDER BY synced_at DESC LIMIT 5").all();
-  
-  res.json({ 
-    syncedCount: countRow.count,
-    recentPosts
-  });
+  try {
+    const countRow = db.prepare("SELECT COUNT(*) as count FROM synced_posts").get() as { count: number };
+    const recentPosts = db.prepare("SELECT post_id, synced_at FROM synced_posts ORDER BY synced_at DESC LIMIT 5").all();
+    
+    res.json({ 
+      syncedCount: countRow.count,
+      recentPosts,
+      dbStatus: "ok"
+    });
+  } catch (err: any) {
+    console.error("Status DB Error:", err);
+    res.json({ 
+      syncedCount: 0,
+      recentPosts: [],
+      dbStatus: "error",
+      dbError: err.message
+    });
+  }
 });
 
 app.post("/api/sync", async (req, res) => {

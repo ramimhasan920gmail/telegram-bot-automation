@@ -14,6 +14,8 @@ import { motion, AnimatePresence } from "motion/react";
 interface Status {
   syncedCount: number;
   recentPosts: Array<{ post_id: string; synced_at: string }>;
+  dbStatus?: string;
+  dbError?: string;
 }
 
 export default function App() {
@@ -70,7 +72,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData)
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({ error: "Invalid JSON response from server" }));
       if (res.ok) {
         if (data.synced > 0) {
           setMessage({ 
@@ -82,7 +84,8 @@ export default function App() {
         }
         fetchStatus();
       } else {
-        setMessage({ text: data.error || "Sync failed", type: "error" });
+        const errorMsg = data.error || data.message || JSON.stringify(data);
+        setMessage({ text: `Sync failed: ${errorMsg}`, type: "error" });
       }
     } catch (err) {
       setMessage({ text: "Network error during sync", type: "error" });
@@ -140,6 +143,18 @@ export default function App() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-12">
+        {status?.dbStatus === "error" && (
+          <div className="mb-8 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 text-rose-800">
+            <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-bold text-sm">Database Error (Netlify)</p>
+              <p className="text-xs opacity-90">
+                {status.dbError}. This usually happens on Netlify because of native module compatibility.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           
           {/* Left Column: Stats & Action */}
@@ -303,7 +318,7 @@ export default function App() {
                 <ol className="text-xs text-gray-500 space-y-2 list-decimal ml-4">
                   <li>Auto-syncs every 30 seconds.</li>
                   <li>Fetches latest 10 posts from Blogger.</li>
-                  <li>Uses Gemini AI to extract movie metadata.</li>
+                  <li>Extracts movie title and snippet.</li>
                   <li>Sends with image to Telegram Channel.</li>
                 </ol>
               </div>
