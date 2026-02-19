@@ -5,6 +5,11 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  external_node_modules = ["better-sqlite3", "vite"]
+
+[functions."api"]
+  node_bundler = "esbuild"
+  included_files = ["sync.db"]
 
 [[redirects]]
   from = "/api/*"

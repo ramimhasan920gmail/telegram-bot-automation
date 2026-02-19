@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
@@ -162,8 +161,10 @@ app.post("/api/sync", async (req, res) => {
   }
 });
 
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+// Vite middleware setup
+async function setupVite(app: express.Express) {
+  if (process.env.NODE_ENV !== "production" && !process.env.NETLIFY) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -175,6 +176,10 @@ async function startServer() {
       res.sendFile(path.join(__dirname, "dist", "index.html"));
     });
   }
+}
+
+async function startServer() {
+  await setupVite(app);
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
