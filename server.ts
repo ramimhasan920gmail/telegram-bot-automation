@@ -45,10 +45,14 @@ export { app };
 
 const PORT = 3000;
 
-// Gemini Setup
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-
 async function extractMovieDetails(content: string) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.error("GEMINI_API_KEY is missing in environment variables.");
+    return "Error: GEMINI_API_KEY is not configured on the server.";
+  }
+
+  const genAI = new GoogleGenAI({ apiKey });
   const model = "gemini-3-flash-preview";
   const prompt = `
     Extract movie details from the following Blogger post content. 
@@ -139,75 +143,113 @@ app.get("/api/status", (req, res) => {
     syncedCount: countRow.count,
     recentPosts,
     settings,
+    geminiConfigured: !!process.env.GEMINI_API_KEY,
     configured: !!(settings.BLOGGER_API_KEY && settings.BLOGGER_BLOG_ID && settings.TELEGRAM_BOT_TOKEN && settings.TELEGRAM_CHANNEL_ID)
   });
 });
 
 app.post("/api/sync", async (req, res) => {
   try {
-    // Allow credentials to be passed in the request body (from client localStorage)
+    console.log("Sync request received with body keys:", Object.keys(req.body));
     const { BLOGGER_API_KEY, BLOGGER_BLOG_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHANNEL_ID } = req.body;
     
-    // Temporarily override settings for this request if provided
     const apiKey = BLOGGER_API_KEY || getSetting("BLOGGER_API_KEY");
     const blogId = BLOGGER_BLOG_ID || getSetting("BLOGGER_BLOG_ID");
     const botToken = TELEGRAM_BOT_TOKEN || getSetting("TELEGRAM_BOT_TOKEN");
     const chatId = TELEGRAM_CHANNEL_ID || getSetting("TELEGRAM_CHANNEL_ID");
 
     if (!apiKey || !blogId || !botToken || !chatId) {
-      return res.status(400).json({ error: "Missing configuration" });
+      console.error("Sync failed: Missing configuration", { apiKey: !!apiKey, blogId: !!blogId, botToken: !!botToken, chatId: !!chatId });
+      return res.status(400).json({ error: "Missing configuration. Please check your settings." });
     }
 
     const bloggerUrl = `https://www.googleapis.com/blogger/v3/blogs/${blogId}/posts?key=${apiKey}&maxResults=10`;
+    console.log("Fetching from Blogger...");
     const response = await fetch(bloggerUrl);
     const data = await response.json();
 
-    if (!data.items) return res.json({ message: "No posts found", synced: 0 });
+    if (data.error) {
+      console.error("Blogger API Error:", data.error);
+      return res.status(400).json({ error: `Blogger API Error: ${data.error.message || "Unknown error"}` });
+    }
 
+    if (!data.items) {
+      console.log("No posts found in Blogger response.");
+      return res.json({ message: "No posts found", synced: 0 });
+    }
+
+    console.log(`Found ${data.items.length} posts. Processing top 3...`);
     let syncedCount = 0;
-    // Limit to 3 posts per sync to avoid Netlify function timeouts (10s)
     const postsToProcess = data.items.slice(0, 3);
     
     for (const post of postsToProcess) {
-      const exists = db.prepare("SELECT 1 FROM synced_posts WHERE post_id = ?").get(post.id);
-      
-      if (!exists) {
-        console.log(`Syncing post: ${post.title}`);
+      try {
+        const exists = db.prepare("SELECT 1 FROM synced_posts WHERE post_id = ?").get(post.id);
         
-        let imageUrl = post.images?.[0]?.url;
-        if (!imageUrl) {
-          const imgMatch = post.content.match(/<img[^>]+src="([^">]+)"/);
-          if (imgMatch) imageUrl = imgMatch[1];
+        if (!exists) {
+          console.log(`Syncing post: ${post.title} (${post.id})`);
+          
+          let imageUrl = post.images?.[0]?.url;
+          if (!imageUrl) {
+            const imgMatch = post.content.match(/<img[^>]+src="([^">]+)"/);
+            if (imgMatch) imageUrl = imgMatch[1];
+          }
+
+          console.log("Extracting details with Gemini...");
+          const details = await extractMovieDetails(post.content);
+          
+          if (details.includes("Error extracting details")) {
+            console.error("Gemini extraction failed for post:", post.id);
+            continue;
+          }
+
+          const fullMessage = `${details}\n\n🔗 Download Now: ${post.url}`;
+          let telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+          let body: any = { chat_id: chatId, text: fullMessage, parse_mode: "HTML" };
+
+          if (imageUrl) {
+            telegramUrl = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+            body = { chat_id: chatId, photo: imageUrl, caption: fullMessage, parse_mode: "HTML" };
+          }
+
+          console.log("Sending to Telegram...");
+          const telRes = await fetch(telegramUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+
+          if (telRes.ok) {
+            console.log("Successfully sent to Telegram.");
+            db.prepare("INSERT INTO synced_posts (post_id) VALUES (?)").run(post.id);
+            syncedCount++;
+          } else {
+            const telError = await telRes.json();
+            console.error("Telegram Send Failed:", telError);
+            // If it's a photo error, try text only as fallback
+            if (imageUrl) {
+              console.log("Retrying Telegram as text only...");
+              const textOnlyBody = { chat_id: chatId, text: fullMessage, parse_mode: "HTML" };
+              const textOnlyRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(textOnlyBody),
+              });
+              if (textOnlyRes.ok) {
+                db.prepare("INSERT INTO synced_posts (post_id) VALUES (?)").run(post.id);
+                syncedCount++;
+              }
+            }
+          }
         }
-
-        const details = await extractMovieDetails(post.content);
-        
-        // Manual send to Telegram using provided tokens
-        const fullMessage = `${details}\n\n🔗 Download Now: ${post.url}`;
-        let telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-        let body: any = { chat_id: chatId, text: fullMessage, parse_mode: "HTML" };
-
-        if (imageUrl) {
-          telegramUrl = `https://api.telegram.org/bot${botToken}/sendPhoto`;
-          body = { chat_id: chatId, photo: imageUrl, caption: fullMessage, parse_mode: "HTML" };
-        }
-
-        const telRes = await fetch(telegramUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-
-        if (telRes.ok) {
-          db.prepare("INSERT INTO synced_posts (post_id) VALUES (?)").run(post.id);
-          syncedCount++;
-        }
+      } catch (postError) {
+        console.error(`Error processing post ${post.id}:`, postError);
       }
     }
     res.json({ message: "Sync complete", synced: syncedCount });
   } catch (error: any) {
-    console.error("Sync Error:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Global Sync Error:", error);
+    res.status(500).json({ error: `Sync failed: ${error.message}` });
   }
 });
 
