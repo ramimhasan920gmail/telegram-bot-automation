@@ -65,12 +65,38 @@ export { app };
 const PORT = 3000;
 
 async function extractMovieDetails(post: any) {
-  // Simple extraction without Gemini AI
   const title = post.title || "New Movie Post";
   const content = post.content || "";
-  const snippet = content.replace(/<[^>]*>/g, "").substring(0, 200) + "...";
   
-  return `<b>${title}</b>\n\n${snippet}`;
+  // Helper to extract text after a label
+  const extract = (label: string) => {
+    const regex = new RegExp(`${label}:?\\s*</b>?\\s*([^<\\n]+)`, "i");
+    const match = content.match(regex);
+    return match ? match[1].trim() : null;
+  };
+
+  // Try to find common metadata
+  const imdb = extract("IMDb") || extract("Rating") || "N/A";
+  const genre = extract("Genre") || "N/A";
+  const language = extract("Language") || "N/A";
+  const quality = extract("Quality") || extract("Resolution") || "HD";
+  
+  // Clean up snippet (remove HTML and extra whitespace)
+  const cleanContent = content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const snippet = cleanContent.substring(0, 250) + "...";
+
+  // Premium Template
+  return `
+🔥 <b>${title.toUpperCase()}</b>
+
+⭐ <b>IMDb:</b> ${imdb}
+🎭 <b>Genre:</b> ${genre}
+🌍 <b>Language:</b> ${language}
+💿 <b>Quality:</b> ${quality}
+
+📝 <b>Plot:</b>
+<i>${snippet}</i>
+  `.trim();
 }
 
 async function sendToTelegram(message: string, url: string, imageUrl?: string) {
@@ -189,7 +215,7 @@ app.post("/api/sync", async (req, res) => {
           console.log("Formatting post details...");
           const details = await extractMovieDetails(post);
           
-          const fullMessage = `${details}\n\n🔗 Download Now: ${post.url}`;
+          const fullMessage = `${details}\n\n━━━━━━━━━━━━━━━\n📥 <b>ডাউনলোড লিঙ্ক:</b>\n🔗 ${post.url}`;
           let telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
           let body: any = { chat_id: chatId, text: fullMessage, parse_mode: "HTML" };
 
