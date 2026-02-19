@@ -10,7 +10,10 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const db = new Database("sync.db");
+// Use /tmp for SQLite on Netlify as the root is read-only
+const dbPath = process.env.NETLIFY ? "/tmp/sync.db" : path.join(__dirname, "sync.db");
+const db = new Database(dbPath);
+
 try {
   db.exec(`
     CREATE TABLE IF NOT EXISTS synced_posts (
@@ -162,7 +165,10 @@ app.post("/api/sync", async (req, res) => {
     if (!data.items) return res.json({ message: "No posts found", synced: 0 });
 
     let syncedCount = 0;
-    for (const post of data.items) {
+    // Limit to 3 posts per sync to avoid Netlify function timeouts (10s)
+    const postsToProcess = data.items.slice(0, 3);
+    
+    for (const post of postsToProcess) {
       const exists = db.prepare("SELECT 1 FROM synced_posts WHERE post_id = ?").get(post.id);
       
       if (!exists) {

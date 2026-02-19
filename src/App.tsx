@@ -112,7 +112,9 @@ export default function App() {
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage({ text: "Settings saved to browser storage!", type: "success" });
+    setMessage({ text: "Settings updated! These are saved in your browser and will be used for all syncs.", type: "success" });
+    // Trigger a status refresh to update the UI if needed
+    fetchStatus();
   };
 
   return (
