@@ -140,37 +140,26 @@ app.get("/api/status", (req, res) => {
   });
 });
 
-app.post("/api/settings", (req, res) => {
+app.post("/api/sync", async (req, res) => {
   try {
-    console.log("Saving settings:", req.body);
+    // Allow credentials to be passed in the request body (from client localStorage)
     const { BLOGGER_API_KEY, BLOGGER_BLOG_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHANNEL_ID } = req.body;
     
-    // Save settings even if they are empty strings (to allow clearing)
-    // But we only save if the key is present in the request body
-    if (req.body.hasOwnProperty("BLOGGER_API_KEY")) setSetting("BLOGGER_API_KEY", BLOGGER_API_KEY || "");
-    if (req.body.hasOwnProperty("BLOGGER_BLOG_ID")) setSetting("BLOGGER_BLOG_ID", BLOGGER_BLOG_ID || "");
-    if (req.body.hasOwnProperty("TELEGRAM_BOT_TOKEN")) setSetting("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN || "");
-    if (req.body.hasOwnProperty("TELEGRAM_CHANNEL_ID")) setSetting("TELEGRAM_CHANNEL_ID", TELEGRAM_CHANNEL_ID || "");
-    
-    res.json({ message: "Settings saved" });
-  } catch (error: any) {
-    console.error("Settings Save Error:", error);
-    res.status(500).json({ error: error.message || "Failed to save settings" });
-  }
-});
+    // Temporarily override settings for this request if provided
+    const apiKey = BLOGGER_API_KEY || getSetting("BLOGGER_API_KEY");
+    const blogId = BLOGGER_BLOG_ID || getSetting("BLOGGER_BLOG_ID");
+    const botToken = TELEGRAM_BOT_TOKEN || getSetting("TELEGRAM_BOT_TOKEN");
+    const chatId = TELEGRAM_CHANNEL_ID || getSetting("TELEGRAM_CHANNEL_ID");
 
-async function performSync() {
-  const apiKey = getSetting("BLOGGER_API_KEY");
-  const blogId = getSetting("BLOGGER_BLOG_ID");
+    if (!apiKey || !blogId || !botToken || !chatId) {
+      return res.status(400).json({ error: "Missing configuration" });
+    }
 
-  if (!apiKey || !blogId) return 0;
-
-  try {
     const bloggerUrl = `https://www.googleapis.com/blogger/v3/blogs/${blogId}/posts?key=${apiKey}&maxResults=10`;
     const response = await fetch(bloggerUrl);
     const data = await response.json();
 
-    if (!data.items) return 0;
+    if (!data.items) return res.json({ message: "No posts found", synced: 0 });
 
     let syncedCount = 0;
     for (const post of data.items) {
@@ -186,35 +175,35 @@ async function performSync() {
         }
 
         const details = await extractMovieDetails(post.content);
-        await sendToTelegram(details, post.url, imageUrl);
         
-        db.prepare("INSERT INTO synced_posts (post_id) VALUES (?)").run(post.id);
-        syncedCount++;
+        // Manual send to Telegram using provided tokens
+        const fullMessage = `${details}\n\n🔗 Download Now: ${post.url}`;
+        let telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        let body: any = { chat_id: chatId, text: fullMessage, parse_mode: "HTML" };
+
+        if (imageUrl) {
+          telegramUrl = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+          body = { chat_id: chatId, photo: imageUrl, caption: fullMessage, parse_mode: "HTML" };
+        }
+
+        const telRes = await fetch(telegramUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        if (telRes.ok) {
+          db.prepare("INSERT INTO synced_posts (post_id) VALUES (?)").run(post.id);
+          syncedCount++;
+        }
       }
     }
-    return syncedCount;
-  } catch (error) {
-    console.error("Auto-sync Error:", error);
-    return 0;
-  }
-}
-
-app.post("/api/sync", async (req, res) => {
-  try {
-    const syncedCount = await performSync();
     res.json({ message: "Sync complete", synced: syncedCount });
   } catch (error: any) {
+    console.error("Sync Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
-
-// Auto-sync every 30 seconds
-if (!process.env.NETLIFY) {
-  setInterval(async () => {
-    console.log("Running auto-sync...");
-    await performSync();
-  }, 30000);
-}
 
 // Vite middleware setup
 async function setupVite(app: express.Express) {

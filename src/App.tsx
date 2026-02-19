@@ -26,7 +26,6 @@ interface Status {
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
   const [formData, setFormData] = useState({
     BLOGGER_API_KEY: "",
@@ -35,57 +34,59 @@ export default function App() {
     TELEGRAM_CHANNEL_ID: "",
   });
 
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    const savedSettings = localStorage.getItem("blogger_sync_settings");
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings);
+        setFormData(parsed);
+      } catch (e) {
+        console.error("Failed to parse saved settings");
+      }
+    }
+    fetchStatus();
+  }, []);
+
+  // Save settings to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem("blogger_sync_settings", JSON.stringify(formData));
+  }, [formData]);
+
   const fetchStatus = async () => {
     try {
       const res = await fetch("/api/status");
       const data = await res.json();
       setStatus(data);
-      if (data.settings) {
-        setFormData(data.settings);
-      }
     } catch (err) {
       console.error("Failed to fetch status", err);
     }
   };
 
-  useEffect(() => {
-    fetchStatus();
-  }, []);
-
-  const handleSaveSettings = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setMessage({ text: "Settings saved successfully!", type: "success" });
-        fetchStatus();
-      } else {
-        setMessage({ text: data.error || "Failed to save settings", type: "error" });
-      }
-    } catch (err) {
-      setMessage({ text: "Network error saving settings", type: "error" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleSync = async () => {
+    if (!formData.BLOGGER_API_KEY || !formData.BLOGGER_BLOG_ID || !formData.TELEGRAM_BOT_TOKEN || !formData.TELEGRAM_CHANNEL_ID) {
+      setMessage({ text: "Please fill in all configuration fields first.", type: "error" });
+      return;
+    }
+
     setSyncing(true);
     setMessage({ text: "Checking for new posts...", type: "info" });
     try {
-      const res = await fetch("/api/sync", { method: "POST" });
+      const res = await fetch("/api/sync", { 
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData)
+      });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ 
-          text: `Sync complete! ${data.synced} new posts sent to Telegram.`, 
-          type: "success" 
-        });
+        if (data.synced > 0) {
+          setMessage({ 
+            text: `Sync complete! ${data.synced} new posts sent to Telegram.`, 
+            type: "success" 
+          });
+        } else {
+          setMessage({ text: "No new posts found.", type: "info" });
+        }
         fetchStatus();
       } else {
         setMessage({ text: data.error || "Sync failed", type: "error" });
@@ -95,6 +96,23 @@ export default function App() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  // Client-side auto-sync every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const isConfigured = formData.BLOGGER_API_KEY && formData.BLOGGER_BLOG_ID && formData.TELEGRAM_BOT_TOKEN && formData.TELEGRAM_CHANNEL_ID;
+      if (isConfigured && !syncing) {
+        console.log("Auto-syncing...");
+        handleSync();
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [formData, syncing]);
+
+  const handleSaveSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage({ text: "Settings saved to browser storage!", type: "success" });
   };
 
   return (
@@ -157,18 +175,18 @@ export default function App() {
                       {syncing ? "Syncing now..." : "Idle"}
                     </p>
                   </div>
-                  <button
-                    onClick={handleSync}
-                    disabled={syncing || !status?.configured}
-                    className={`mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-medium transition-all ${
-                      syncing 
-                        ? "bg-gray-100 text-gray-400 cursor-not-allowed" 
-                        : "bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.98] shadow-lg shadow-indigo-200"
-                    }`}
-                  >
-                    <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
-                    {syncing ? "Syncing..." : "Sync Now"}
-                  </button>
+                <button
+                  onClick={handleSync}
+                  disabled={syncing}
+                  className={`mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-medium transition-all ${
+                    syncing 
+                      ? "bg-gray-100 text-gray-400 cursor-not-allowed" 
+                      : "bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.98] shadow-lg shadow-indigo-200"
+                  }`}
+                >
+                  <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
+                  {syncing ? "Syncing..." : "Sync Now"}
+                </button>
                 </motion.div>
               </div>
             </section>
@@ -277,10 +295,9 @@ export default function App() {
                 
                 <button
                   type="submit"
-                  disabled={saving}
-                  className="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors disabled:bg-gray-400"
+                  className="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors"
                 >
-                  {saving ? "Saving..." : "Save Settings"}
+                  Update Settings
                 </button>
               </form>
               
