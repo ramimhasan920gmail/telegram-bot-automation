@@ -13,14 +13,7 @@ import { motion, AnimatePresence } from "motion/react";
 
 interface Status {
   syncedCount: number;
-  configured: boolean;
   recentPosts: Array<{ post_id: string; synced_at: string }>;
-  settings: {
-    BLOGGER_API_KEY: string;
-    BLOGGER_BLOG_ID: string;
-    TELEGRAM_BOT_TOKEN: string;
-    TELEGRAM_CHANNEL_ID: string;
-  };
 }
 
 export default function App() {
@@ -117,6 +110,8 @@ export default function App() {
     fetchStatus();
   };
 
+  const isConfigured = !!(formData.BLOGGER_API_KEY && formData.BLOGGER_BLOG_ID && formData.TELEGRAM_BOT_TOKEN && formData.TELEGRAM_CHANNEL_ID);
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-[#1A1A1A] font-sans selection:bg-indigo-100">
       {/* Header */}
@@ -129,7 +124,7 @@ export default function App() {
             <h1 className="font-semibold text-lg tracking-tight">BloggerSync</h1>
           </div>
           <div className="flex items-center gap-4">
-            {status?.configured ? (
+            {isConfigured ? (
               <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Configured

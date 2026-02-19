@@ -101,18 +101,9 @@ app.get("/api/status", (req, res) => {
   const countRow = db.prepare("SELECT COUNT(*) as count FROM synced_posts").get() as { count: number };
   const recentPosts = db.prepare("SELECT post_id, synced_at FROM synced_posts ORDER BY synced_at DESC LIMIT 5").all();
   
-  const settings = {
-    BLOGGER_API_KEY: getSetting("BLOGGER_API_KEY") || "",
-    BLOGGER_BLOG_ID: getSetting("BLOGGER_BLOG_ID") || "",
-    TELEGRAM_BOT_TOKEN: getSetting("TELEGRAM_BOT_TOKEN") || "",
-    TELEGRAM_CHANNEL_ID: getSetting("TELEGRAM_CHANNEL_ID") || "",
-  };
-
   res.json({ 
     syncedCount: countRow.count,
-    recentPosts,
-    settings,
-    configured: !!(settings.BLOGGER_API_KEY && settings.BLOGGER_BLOG_ID && settings.TELEGRAM_BOT_TOKEN && settings.TELEGRAM_CHANNEL_ID)
+    recentPosts
   });
 });
 
