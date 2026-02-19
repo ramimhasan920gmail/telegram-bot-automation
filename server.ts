@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
 import dotenv from "dotenv";
@@ -16,9 +17,21 @@ const getDirname = () => {
 
 const __dirname = getDirname();
 
-// Use /tmp for SQLite on Netlify as the root is read-only
-const dbPath = process.env.NETLIFY ? "/tmp/sync.db" : path.join(__dirname, "sync.db");
-const db = new Database(dbPath);
+let db: Database.Database;
+try {
+  const isNetlify = process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME;
+  const dbPath = isNetlify ? "/tmp/sync.db" : path.join(__dirname, "sync.db");
+  
+  // Ensure directory exists for local dev
+  if (!isNetlify && !fs.existsSync(path.dirname(dbPath))) {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  }
+  
+  db = new Database(dbPath);
+} catch (err) {
+  console.error("Failed to initialize file-based database, using in-memory:", err);
+  db = new Database(":memory:");
+}
 
 try {
   db.exec(`
