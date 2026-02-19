@@ -1,0 +1,5 @@
+{
+  "name": "Blogger to Telegram Movie Poster",
+  "description": "Automatically fetches movie posts from Blogger and formats them for Telegram channels using Gemini AI.",
+  "requestFramePermissions": []
+}
